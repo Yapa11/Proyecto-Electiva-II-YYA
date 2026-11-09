@@ -133,9 +133,9 @@ def registrar_movimiento(
                 detail="No tienes permisos para registrar movimientos."
             )
 
-        tipo = datos.tipo.strip().capitalize()
+        tipo = datos.tipo.strip().lower()
 
-        if tipo not in ["Entrada", "Salida"]:
+        if tipo not in ["entrada", "salida"]:
             raise HTTPException(
                 status_code=400,
                 detail="El tipo debe ser Entrada o Salida."
@@ -157,7 +157,7 @@ def registrar_movimiento(
                 detail="El producto no existe o está inactivo."
             )
 
-        if tipo == "Salida":
+        if tipo == "salida":
             if datos.cantidad > producto.cantidad:
                 raise HTTPException(
                     status_code=400,
