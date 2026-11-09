@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
+import bcrypt
 
 from app.conexion import obtener_db
 from app.modelos import Usuario, Negocio
@@ -16,6 +18,20 @@ password_hash = PasswordHash.recommended()
 class DatosLogin(BaseModel):
     correo: str
     contrasena: str
+
+
+def verificar_contrasena(contrasena: str, hash_guardado: str) -> bool:
+    try:
+        return password_hash.verify(contrasena, hash_guardado)
+    except UnknownHashError:
+        # Compatibilidad con usuarios registrados anteriormente con bcrypt.
+        try:
+            return bcrypt.checkpw(
+                contrasena.encode("utf-8"),
+                hash_guardado.encode("utf-8")
+            )
+        except (ValueError, TypeError):
+            return False
 
 
 @router.post("/login")
@@ -35,7 +51,7 @@ def iniciar_sesion(
             detail="Correo o contraseña incorrectos."
         )
 
-    if not password_hash.verify(
+    if not verificar_contrasena(
         datos.contrasena,
         usuario.password_hash
     ):

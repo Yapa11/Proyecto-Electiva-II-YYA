@@ -3,13 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-import bcrypt
+from pwdlib import PasswordHash
 
 from app.conexion import obtener_db
 from app.modelos import Negocio, Usuario
 
 
 router = APIRouter(prefix="/api/usuarios", tags=["Usuarios"])
+
+password_hash = PasswordHash.recommended()
 
 
 class DatosEmpleado(BaseModel):
@@ -163,10 +165,7 @@ def registrar_empleado(
                 detail="Ya existe un usuario registrado con ese correo."
             )
 
-        contrasena_hash = bcrypt.hashpw(
-            datos.contrasena.encode("utf-8"),
-            bcrypt.gensalt()
-        ).decode("utf-8")
+        contrasena_hash = password_hash.hash(datos.contrasena)
 
         empleado = Usuario(
             id_usuario=generar_id_usuario(db),
