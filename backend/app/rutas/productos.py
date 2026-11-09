@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,28 @@ class DatosProducto(BaseModel):
     precio: float = Field(ge=0)
     cantidad: int = Field(ge=0)
     stock_minimo: int = Field(ge=0)
+
+
+def generar_id_producto(db: Session):
+    db.execute(
+        text("""
+            UPDATE secuencias
+            SET ultimo_id = LAST_INSERT_ID(ultimo_id + 1)
+            WHERE nombre = 'productos'
+        """)
+    )
+
+    nuevo_id = db.execute(
+        text("SELECT LAST_INSERT_ID()")
+    ).scalar()
+
+    if not nuevo_id:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo generar el identificador del producto. Verifica la secuencia productos en la base de datos."
+        )
+
+    return nuevo_id
 
 
 def obtener_negocio(codigo_negocio: str, db: Session):
@@ -142,23 +164,26 @@ def crear_producto(
         db
     )
 
-    producto = Producto(
-        id_negocio=negocio.id_negocio,
-        id_categoria=categoria.id_categoria if categoria else None,
-        codigo=datos.codigo.strip() if datos.codigo else None,
-        nombre=datos.nombre.strip(),
-        descripcion=datos.descripcion,
-        precio=datos.precio,
-        cantidad=datos.cantidad,
-        stock_minimo=datos.stock_minimo,
-        estado="activo"
-    )
-
-    db.add(producto)
-
     try:
+        nuevo_id = generar_id_producto(db)
+
+        producto = Producto(
+            id_producto=nuevo_id,
+            id_negocio=negocio.id_negocio,
+            id_categoria=categoria.id_categoria if categoria else None,
+            codigo=datos.codigo.strip() if datos.codigo else None,
+            nombre=datos.nombre.strip(),
+            descripcion=datos.descripcion,
+            precio=datos.precio,
+            cantidad=datos.cantidad,
+            stock_minimo=datos.stock_minimo,
+            estado="activo"
+        )
+
+        db.add(producto)
         db.commit()
         db.refresh(producto)
+
     except IntegrityError:
         db.rollback()
         raise HTTPException(
