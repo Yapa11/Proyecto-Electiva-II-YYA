@@ -1,4 +1,5 @@
-from datetime import datetime
+
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,13 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.conexion import obtener_db
 from app.modelos import Movimiento, Producto, Usuario, Negocio
-import logging
 
-router = APIRouter(
-    prefix="/api/movimientos",
-    tags=["Movimientos"]
-)
+
+router = APIRouter(prefix="/api/movimientos", tags=["Movimientos"])
+
 logger = logging.getLogger(__name__)
+
 
 class DatosMovimiento(BaseModel):
     id_producto: int
@@ -23,11 +23,7 @@ class DatosMovimiento(BaseModel):
     observacion: Optional[str] = None
 
 
-def obtener_contexto(
-    codigo_negocio: str,
-    id_usuario: int,
-    db: Session
-):
+def obtener_contexto(codigo_negocio, id_usuario, db):
     negocio = db.scalar(
         select(Negocio).where(
             Negocio.codigo == codigo_negocio.strip().upper()
@@ -65,8 +61,7 @@ def convertir_movimiento(movimiento, producto, usuario):
         "cantidad": movimiento.cantidad,
         "fecha": (
             movimiento.fecha.strftime("%Y-%m-%d %H:%M:%S")
-            if movimiento.fecha
-            else ""
+            if movimiento.fecha else ""
         ),
         "usuario": f"{usuario.nombre} {usuario.apellido}".strip(),
         "observacion": movimiento.observacion or ""
@@ -95,15 +90,17 @@ def listar_movimientos(
             Usuario,
             Movimiento.id_usuario == Usuario.id_usuario
         )
-        .where(
-            Movimiento.id_negocio == negocio.id_negocio
-        )
+        .where(Movimiento.id_negocio == negocio.id_negocio)
         .order_by(Movimiento.fecha.desc())
     ).all()
 
     return {
         "movimientos": [
-            convertir_movimiento(movimiento, producto, usuario_registro)
+            convertir_movimiento(
+                movimiento,
+                producto,
+                usuario_registro
+            )
             for movimiento, producto, usuario_registro in registros
         ]
     }
@@ -171,7 +168,6 @@ def registrar_movimiento(
                 )
 
             producto.cantidad -= datos.cantidad
-
         else:
             producto.cantidad += datos.cantidad
 
@@ -210,9 +206,11 @@ def registrar_movimiento(
         raise
 
     except Exception:
-    db.rollback()
-    logger.exception("ERROR REAL AL REGISTRAR EL MOVIMIENTO")
-    raise HTTPException(
-        status_code=500,
-        detail="Ocurrió un error al guardar el movimiento."
-    )
+        db.rollback()
+        logger.exception(
+            "ERROR REAL AL REGISTRAR EL MOVIMIENTO"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Ocurrió un error al guardar el movimiento."
+        )
