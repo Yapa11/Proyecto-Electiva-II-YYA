@@ -1,6 +1,7 @@
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 import bcrypt
 
@@ -8,10 +9,7 @@ from app.conexion import obtener_db
 from app.modelos import Negocio, Usuario
 
 
-router = APIRouter(
-    prefix="/api/usuarios",
-    tags=["Usuarios"]
-)
+router = APIRouter(prefix="/api/usuarios", tags=["Usuarios"])
 
 
 class DatosEmpleado(BaseModel):
@@ -76,6 +74,25 @@ def convertir_usuario(usuario: Usuario):
     }
 
 
+def generar_id_usuario(db: Session):
+    resultado = db.execute(
+        text("""
+            UPDATE secuencias
+            SET ultimo_id = LAST_INSERT_ID(ultimo_id + 1)
+            WHERE nombre = 'usuarios'
+        """)
+    )
+
+    if resultado.rowcount != 1:
+        raise RuntimeError(
+            "No se encontró la secuencia de usuarios."
+        )
+
+    return db.execute(
+        text("SELECT LAST_INSERT_ID()")
+    ).scalar_one()
+
+
 @router.get("/")
 def listar_usuarios(
     codigo_negocio: str,
@@ -127,48 +144,61 @@ def registrar_empleado(
     id_usuario: int,
     db: Session = Depends(obtener_db)
 ):
-    negocio, _ = obtener_dueno(
-        codigo_negocio,
-        id_usuario,
-        db
-    )
-
-    correo = datos.correo.strip().lower()
-
-    existente = db.scalar(
-        select(Usuario).where(Usuario.correo == correo)
-    )
-
-    if existente:
-        raise HTTPException(
-            status_code=409,
-            detail="Ya existe un usuario registrado con ese correo."
+    try:
+        negocio, _ = obtener_dueno(
+            codigo_negocio,
+            id_usuario,
+            db
         )
 
-    contrasena_hash = bcrypt.hashpw(
-        datos.contrasena.encode("utf-8"),
-        bcrypt.gensalt()
-    ).decode("utf-8")
+        correo = datos.correo.strip().lower()
 
-    empleado = Usuario(
-        id_negocio=negocio.id_negocio,
-        nombre=datos.nombre.strip(),
-        apellido=datos.apellido.strip(),
-        correo=correo,
-        password_hash=contrasena_hash,
-        rol="empleado",
-        es_administrador=False,
-        estado="activo"
-    )
+        existente = db.scalar(
+            select(Usuario).where(Usuario.correo == correo)
+        )
 
-    db.add(empleado)
-    db.commit()
-    db.refresh(empleado)
+        if existente:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe un usuario registrado con ese correo."
+            )
 
-    return {
-        "mensaje": "Empleado registrado correctamente.",
-        "empleado": convertir_usuario(empleado)
-    }
+        contrasena_hash = bcrypt.hashpw(
+            datos.contrasena.encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+
+        empleado = Usuario(
+            id_usuario=generar_id_usuario(db),
+            id_negocio=negocio.id_negocio,
+            nombre=datos.nombre.strip(),
+            apellido=datos.apellido.strip(),
+            correo=correo,
+            password_hash=contrasena_hash,
+            rol="empleado",
+            es_administrador=False,
+            estado="activo"
+        )
+
+        db.add(empleado)
+        db.commit()
+        db.refresh(empleado)
+
+        return {
+            "mensaje": "Empleado registrado correctamente.",
+            "empleado": convertir_usuario(empleado)
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Ocurrió un error al registrar el empleado."
+        )
 
 
 @router.put("/empleados/{id_empleado}/administrador")
@@ -207,7 +237,6 @@ def designar_administrador(
         )
     ).all()
 
-    # Solo puede existir un empleado administrador.
     for usuario in empleados:
         usuario.es_administrador = (
             usuario.id_usuario == empleado.id_usuario
