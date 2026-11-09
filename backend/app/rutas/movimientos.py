@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.conexion import obtener_db
 from app.modelos import Movimiento, Producto, Usuario, Negocio
-
+import logging
 
 router = APIRouter(
     prefix="/api/movimientos",
     tags=["Movimientos"]
 )
-
+logger = logging.getLogger(__name__)
 
 class DatosMovimiento(BaseModel):
     id_producto: int
@@ -210,8 +210,9 @@ def registrar_movimiento(
         raise
 
     except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Ocurrió un error al guardar el movimiento."
-        )
+    db.rollback()
+    logger.exception("ERROR REAL AL REGISTRAR EL MOVIMIENTO")
+    raise HTTPException(
+        status_code=500,
+        detail="Ocurrió un error al guardar el movimiento."
+    )
